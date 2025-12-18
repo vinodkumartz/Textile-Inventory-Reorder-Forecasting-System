@@ -332,7 +332,7 @@ kpi_bg = "linear-gradient(135deg, #4b6cb7, #182848)"
 def load_artifacts():
     model = joblib.load("Gradient_Boosting_model_RWTD.pkl")
     scaler = joblib.load("feature_scaler_RWTD.pkl")
-    data = pd.read_csv(r"Data\real_world_textile_dataset_5000.csv")
+    data = pd.read_csv(r"Data/real_world_textile_dataset_5000.csv")
     return model, scaler, data
 
 model, scaler, data = load_artifacts()
