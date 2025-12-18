@@ -350,7 +350,7 @@ tab1, tab2, tab3 = st.tabs([
 # TAB 1 — PREDICTION
 # ==================================
 with tab1:
-    st.title(" Textile Inventory Reorder level Prediction")
+    st.title(" Textile Industry - Know When to Reorder your Inventory ")
 
     # ----------------------------------
     # Numeric Column Maximums (from dataset)
