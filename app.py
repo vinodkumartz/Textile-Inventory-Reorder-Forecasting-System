@@ -526,9 +526,13 @@ with tab1:
         # Save History
         if "history" not in st.session_state:
             st.session_state.history = []
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        ist_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
 
         st.session_state.history.append({
-                "Time": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+                "Time": ist_time,
                 "Product": product_name,
                 "Supplier": supplier,
                 "Reorder_Level": prediction,
