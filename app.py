@@ -532,7 +532,7 @@ with tab1:
         from datetime import datetime, timedelta
 
         # Get UTC time
-        utc_now = datetime.now()
+        utc_now = datetime.utcnow()
 
         # Convert to IST (UTC + 5:30)
         ist_now = utc_now + timedelta(hours=5, minutes=30)
