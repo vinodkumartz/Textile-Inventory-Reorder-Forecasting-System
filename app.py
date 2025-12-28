@@ -488,8 +488,7 @@ with tab1:
           "Selling Price (₹)": selling_price,
           "Discount %": discount,
           "Revenue (₹)": int(revenue),
-          "Profit (₹)": int(profit)
-    }])
+          "Profit (₹)": int(profit)}])
 
         summary_df.insert(0, "S. No.", range(1, len(summary_df) + 1))
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
@@ -526,10 +525,21 @@ with tab1:
         # Save History
         if "history" not in st.session_state:
             st.session_state.history = []
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+        # from datetime import datetime
+        # from zoneinfo import ZoneInfo
 
-        ist_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
+        # ist_time = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
+        from datetime import datetime, timedelta
+
+        # Get UTC time
+        utc_now = datetime.now()
+
+        # Convert to IST (UTC + 5:30)
+        ist_now = utc_now + timedelta(hours=5, minutes=30)
+
+        # Format time
+        ist_time = ist_now.strftime("%d %b %Y, %I:%M %p")
+
 
         st.session_state.history.append({
                 "Time": ist_time,
