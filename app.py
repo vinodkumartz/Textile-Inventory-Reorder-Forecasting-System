@@ -528,7 +528,7 @@ with tab1:
             st.session_state.history = []
 
         st.session_state.history.append({
-                "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Time": datetime.now().strftime("%d %b %Y, %I:%M %p"),
                 "Product": product_name,
                 "Supplier": supplier,
                 "Reorder_Level": prediction,
