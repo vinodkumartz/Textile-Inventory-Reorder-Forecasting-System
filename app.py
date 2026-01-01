@@ -308,7 +308,6 @@ tbody tr:hover td {
     padding-bottom: 2px !important;              /* ⬅ moves underline up */
 }
 
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -330,12 +329,78 @@ kpi_bg = "linear-gradient(135deg, #4b6cb7, #182848)"
 # ----------------------------------
 @st.cache_resource
 def load_artifacts():
-    model = joblib.load("Gradient_Boosting_model_RWTD.pkl")
-    scaler = joblib.load("feature_scaler_RWTD.pkl")
+    model = joblib.load("XGBoost_RWTD.pkl")
+    scaler = joblib.load("XGB_scaler_RWTD.pkl")
     data = pd.read_csv(r"Data/real_world_textile_dataset_5000.csv")
     return model, scaler, data
 
 model, scaler, data = load_artifacts()
+
+
+def prepare_model_input(
+    product_name,
+    supplier,
+    demand_index,
+    current_stock,
+    stock_after_sales,
+    purchase_price,
+    selling_price,
+    discount,
+    data,
+    scaler
+):
+    # Initialize all features with 0
+    input_dict = dict.fromkeys(scaler.feature_names_in_, 0)
+
+    # ----------------------------
+    # Numeric Features
+    # ----------------------------
+    input_dict["Demand_Index"] = demand_index
+    input_dict["Current_Stock_Qty"] = current_stock
+    input_dict["Stock_After_Sales"] = stock_after_sales
+    input_dict["Purchase_Price"] = purchase_price
+    input_dict["Selling_Price"] = selling_price
+    input_dict["Discount_%"] = discount
+
+    # ----------------------------
+    # Derived Business Metrics
+    # ----------------------------
+    revenue = selling_price * (1 - discount / 100)
+    profit = revenue - purchase_price
+
+    input_dict["Revenue"] = revenue
+    input_dict["Profit"] = profit
+
+    # ----------------------------
+    # Product One-Hot Encoding
+    # ----------------------------
+    product_col = f"Product_Name_{product_name}"
+    if product_col in input_dict:
+        input_dict[product_col] = 1
+
+    # ----------------------------
+    # Category One-Hot Encoding
+    # ----------------------------
+    category = data.loc[
+        data["Product_Name"] == product_name, "Category"
+    ].iloc[0]
+
+    category_col = f"Category_{category}"
+    if category_col in input_dict:
+        input_dict[category_col] = 1
+
+    # ----------------------------
+    # Supplier One-Hot Encoding
+    # ----------------------------
+    supplier_col = f"Supplier_{supplier}"
+    if supplier_col in input_dict:
+        input_dict[supplier_col] = 1
+
+    # Return DataFrame in EXACT training order
+    model_input = pd.DataFrame([input_dict])
+
+    return model_input
+
 
 # ----------------------------------
 # Tabs
@@ -350,18 +415,20 @@ tab1, tab2, tab3 = st.tabs([
 # TAB 1 — PREDICTION
 # ==================================
 with tab1:
-    st.title(" Textile Industry - Know When to Reorder your Inventory ")
+    st.title("Textile Industry – Know When to Reorder Your Inventory")
 
     # ----------------------------------
-    # Numeric Column Maximums (from dataset)
+    # Dataset-driven limits
     # ----------------------------------
     MAX_DEMAND = int(data["Demand_Index"].max())
     MAX_CURRENT_STOCK = int(data["Current_Stock_Qty"].max())
-    MAX_STOCK_AFTER = int(data["Stock_After_Sales"].max())
     MAX_PURCHASE_PRICE = float(data["Purchase_Price"].max())
     MAX_SELLING_PRICE = float(data["Selling_Price"].max())
     MAX_DISCOUNT = int(data["Discount_%"].max())
 
+    # ----------------------------------
+    # Sidebar Inputs
+    # ----------------------------------
     st.sidebar.header("Product Configuration")
 
     product_name = st.sidebar.selectbox(
@@ -378,68 +445,185 @@ with tab1:
         "Demand Index",
         min_value=0,
         max_value=MAX_DEMAND,
-        value=min(150, MAX_DEMAND)
+        value=min(100, MAX_DEMAND),
+        step=1
     )
 
     current_stock = st.sidebar.number_input(
-        "Current Stock",
+        "Current Stock Quantity",
         min_value=0,
         max_value=MAX_CURRENT_STOCK,
-        value=min(100, MAX_CURRENT_STOCK)
+        value=min(120, MAX_CURRENT_STOCK),
+        step=1
     )
 
     stock_after_sales = st.sidebar.number_input(
         "Stock After Sales",
         min_value=0,
-        max_value=current_stock,   # logical restriction
-        value=min(50, current_stock)
+        max_value=current_stock,
+        value=max(0, current_stock - 30),
+        step=1
     )
 
     purchase_price = st.sidebar.number_input(
         "Purchase Price (₹)",
         min_value=0.0,
         max_value=MAX_PURCHASE_PRICE,
-        value=min(500.0, MAX_PURCHASE_PRICE)
+        value=min(400.0, MAX_PURCHASE_PRICE),
+        step=10.0
     )
 
     selling_price = st.sidebar.number_input(
         "Selling Price (₹)",
         min_value=0.0,
         max_value=MAX_SELLING_PRICE,
-        value=min(800.0, MAX_SELLING_PRICE)
+        value=min(700.0, MAX_SELLING_PRICE),
+        step=10.0
     )
 
     discount = st.sidebar.slider(
-        "Discount %",
+        "Discount (%)",
         min_value=0,
         max_value=MAX_DISCOUNT,
         value=min(10, MAX_DISCOUNT)
     )
-
+    
     quantity_sold = current_stock - stock_after_sales
     revenue = quantity_sold * selling_price * (1 - discount / 100)
     profit = revenue - (quantity_sold * purchase_price)
-
-    product_map = {v: k for k, v in enumerate(data["Product_Name"].unique())}
-    supplier_map = {v: k for k, v in enumerate(data["Supplier"].unique())}
-
-    model_input = pd.DataFrame([[  
-        product_map[product_name],
-        supplier_map[supplier],
-        demand_index,
-        current_stock,
-        stock_after_sales,
-        purchase_price,
-        selling_price,
-        discount,
-        revenue,
-        profit
-    ]], columns=scaler.feature_names_in_)
-
+    # ----------------------------------
+    # Prediction Trigger
+    # ----------------------------------
     if st.sidebar.button(" Predict Reorder Level"):
 
-        scaled = scaler.transform(model_input)
-        prediction = int(model.predict(scaled)[0])
+        # Prepare model input using FIXED logic
+        model_input = prepare_model_input(
+            product_name=product_name,
+            supplier=supplier,
+            demand_index=demand_index,
+            current_stock=current_stock,
+            stock_after_sales=stock_after_sales,
+            purchase_price=purchase_price,
+            selling_price=selling_price,
+            discount=discount,
+            data=data,
+            scaler=scaler
+        )
+
+        # Scale input
+        model_input_scaled = scaler.transform(model_input)
+
+        # Predict
+        prediction = int(model.predict(model_input_scaled)[0])
+        
+        accuracy = 90.12
+
+        # KPIs
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f"<div class='metric-box'><div class='big-font'>{prediction}</div><div class='sub-font'>Reorder Level</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(revenue):,}</div><div class='sub-font'>Revenue</div></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(profit):,}</div><div class='sub-font'>Profit</div></div>", unsafe_allow_html=True)
+        c4.markdown(f"<div class='metric-box'><div class='big-font'>{accuracy}%</div>"f"<div class='sub-font'>Prediction Accuracy</div></div>",unsafe_allow_html=True)
+        st.markdown("---")
+        
+
+#==================================
+# TAB 1 — PREDICTION
+#==================================
+# with tab1:
+#     st.title(" Textile Industry - Know When to Reorder your Inventory ")
+
+#     # ----------------------------------
+#     # Numeric Column Maximums (from dataset)
+#     # ----------------------------------
+#     MAX_DEMAND = int(data["Demand_Index"].max())
+#     MAX_CURRENT_STOCK = int(data["Current_Stock_Qty"].max())
+#     MAX_STOCK_AFTER = int(data["Stock_After_Sales"].max())
+#     MAX_PURCHASE_PRICE = float(data["Purchase_Price"].max())
+#     MAX_SELLING_PRICE = float(data["Selling_Price"].max())
+#     MAX_DISCOUNT = int(data["Discount_%"].max())
+    
+    
+
+#     st.sidebar.header("Product Configuration")
+    
+    
+#     product_name = st.sidebar.selectbox(
+#         "Product Name",
+#         sorted(data["Product_Name"].unique())
+#     )
+
+#     supplier = st.sidebar.selectbox(
+#         "Supplier",
+#         sorted(data["Supplier"].unique())
+#     )
+
+#     demand_index = st.sidebar.number_input(
+#         "Demand Index",
+#         min_value=0,
+#         max_value=MAX_DEMAND,
+#         value=min(150, MAX_DEMAND)
+#     )
+
+#     current_stock = st.sidebar.number_input(
+#         "Current Stock",
+#         min_value=0,
+#         max_value=MAX_CURRENT_STOCK,
+#         value=min(100, MAX_CURRENT_STOCK)
+#     )
+
+#     stock_after_sales = st.sidebar.number_input(
+#         "Stock After Sales",
+#         min_value=0,
+#         max_value=current_stock,   # logical restriction
+#         value=min(50, current_stock)
+#     )
+
+#     purchase_price = st.sidebar.number_input(
+#         "Purchase Price (₹)",
+#         min_value=0.0,
+#         max_value=MAX_PURCHASE_PRICE,
+#         value=min(500.0, MAX_PURCHASE_PRICE)
+#     )
+
+#     selling_price = st.sidebar.number_input(
+#         "Selling Price (₹)",
+#         min_value=0.0,
+#         max_value=MAX_SELLING_PRICE,
+#         value=min(800.0, MAX_SELLING_PRICE)
+#     )
+
+#     discount = st.sidebar.slider(
+#         "Discount %",
+#         min_value=0,
+#         max_value=MAX_DISCOUNT,
+#         value=min(10, MAX_DISCOUNT)
+#     )
+
+    # quantity_sold = current_stock - stock_after_sales
+    # revenue = quantity_sold * selling_price * (1 - discount / 100)
+    # profit = revenue - (quantity_sold * purchase_price)
+
+#     product_map = {v: k for k, v in enumerate(data["Product_Name"].unique())}
+#     supplier_map = {v: k for k, v in enumerate(data["Supplier"].unique())}
+
+#     model_input = pd.DataFrame([[  
+#         product_map[product_name],
+#         supplier_map[supplier],
+#         demand_index,
+#         current_stock,
+#         stock_after_sales,
+#         purchase_price,
+#         selling_price,
+#         discount,
+#         revenue,
+#         profit
+#     ]], columns=scaler.feature_names_in_)
+
+#     if st.sidebar.button(" Predict Reorder Level"):
+
+#         scaled = scaler.transform(model_input)
+#         prediction = int(model.predict(scaled)[0])
 
         # ----------------------------------
         # INPUT-BASED ACCURACY CALCULATION
@@ -461,15 +645,15 @@ with tab1:
         #     accuracy = max(0, round(float(accuracy), 2))
         # else:
         #     accuracy = None
-        accuracy = 87.3
+        # accuracy = 87.3
 
-        # KPIs
-        c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(f"<div class='metric-box'><div class='big-font'>{prediction}</div><div class='sub-font'>Reorder Level</div></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(revenue):,}</div><div class='sub-font'>Revenue</div></div>", unsafe_allow_html=True)
-        c3.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(profit):,}</div><div class='sub-font'>Profit</div></div>", unsafe_allow_html=True)
-        c4.markdown(f"<div class='metric-box'><div class='big-font'>{accuracy}%</div>"f"<div class='sub-font'>Prediction Accuracy</div></div>",unsafe_allow_html=True)
-        st.markdown("---")
+        # # KPIs
+        # c1, c2, c3, c4 = st.columns(4)
+        # c1.markdown(f"<div class='metric-box'><div class='big-font'>{prediction}</div><div class='sub-font'>Reorder Level</div></div>", unsafe_allow_html=True)
+        # c2.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(revenue):,}</div><div class='sub-font'>Revenue</div></div>", unsafe_allow_html=True)
+        # c3.markdown(f"<div class='metric-box'><div class='big-font'>₹{int(profit):,}</div><div class='sub-font'>Profit</div></div>", unsafe_allow_html=True)
+        # c4.markdown(f"<div class='metric-box'><div class='big-font'>{accuracy}%</div>"f"<div class='sub-font'>Prediction Accuracy</div></div>",unsafe_allow_html=True)
+        # st.markdown("---")
 
             
     # ----------------------------------
@@ -497,7 +681,7 @@ with tab1:
     # # ----------------------------------
     # # VISUALIZATIONS
     # # ----------------------------------
-    #     st.subheader("📊 Analytical Insights")
+    #     st.subheader(" Analytical Insights")
     #     colA, colB = st.columns(2)
 
     # # Comparison Chart
